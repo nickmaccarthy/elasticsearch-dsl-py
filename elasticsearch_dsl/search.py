@@ -1,7 +1,6 @@
 from six import iteritems, string_types
 
 from elasticsearch.helpers import scan
-from elasticsearch.exceptions import TransportError
 
 from .query import Q, EMPTY_QUERY, Bool
 from .aggs import A, AggBase
@@ -98,7 +97,7 @@ class Request(object):
         Specify query params to be used when executing the search. All the
         keyword arguments will override the current values. See
         http://elasticsearch-py.readthedocs.org/en/master/api.html#elasticsearch.Elasticsearch.search
-        for all available parameters.
+        for all availible parameters.
 
         Example::
 
@@ -111,7 +110,7 @@ class Request(object):
 
     def index(self, *index):
         """
-        Set the index for the search. If called empty it will remove all information.
+        Set the index for the search. If called empty it will rmove all information.
 
         Example:
 
@@ -204,20 +203,20 @@ class Search(Request):
         :arg index: limit the search to index
         :arg doc_type: only query this type.
 
-        All the parameters supplied (or omitted) at creation type can be later
+        All the paramters supplied (or omitted) at creation type can be later
         overriden by methods (`using`, `index` and `doc_type` respectively).
         """
         super(Search, self).__init__(**kwargs)
 
         self.aggs = AggsProxy(self)
         self._sort = []
-        self._source = None
         self._fields = None
         self._partial_fields = {}
         self._highlight = {}
         self._highlight_opts = {}
         self._suggest = {}
         self._script_fields = {}
+        self._source = None
         self._response_class = Response
 
         self._query_proxy = QueryProxy(self, 'query')
@@ -296,8 +295,8 @@ class Search(Request):
 
         s._response_class = self._response_class
         s._sort = self._sort[:]
+        s._fields = self._fields[:] if self._fields is not None else None
         s._source = self._source.copy() if self._source else None
-        s._fields = self._fields[:] if self._fields else None
         s._partial_fields = self._partial_fields.copy()
         s._highlight = self._highlight.copy()
         s._highlight_opts = self._highlight_opts.copy()
@@ -338,8 +337,6 @@ class Search(Request):
             }
         if 'sort' in d:
             self._sort = d.pop('sort')
-        if '_source' in d:
-            self._source = d.pop('_source')
         if 'fields' in d:
             self._fields = d.pop('fields')
         if 'partial_fields' in d:
@@ -357,7 +354,37 @@ class Search(Request):
         if 'script_fields' in d:
             self._script_fields = d.pop('script_fields')
         self._extra = d
-        return self
+     
+    def source(self, **kwargs):
+            """
+            Selectively control how the _source field is returned.
+            :arg source: wildcard string, array of wildcards, or dictionary of includes and excludes
+            If ``source`` is None, the entire document will be returned for
+            each hit.  If source is a dictionary with keys of 'include' and/or
+            'exclude' the fields will be either included or excluded appropriately.
+            Calling this multiple times with the same named parameter will override the
+            previous values with the new ones.
+            Example::
+                s = Search()
+                s = s.source(include=['obj1.*'], exclude=["*.description"])
+                s = Search()
+                s = s.source(include=['obj1.*']).source(exclude=["*.description"])
+            """
+            s = self._clone()
+
+            if s._source is None:
+                s._source = {}
+
+            for key, value in kwargs.items():
+                if value is None:
+                    try:
+                        del s._source[key]
+                    except KeyError:
+                        pass
+                else:
+                    s._source[key] = value
+
+            return s
 
     def script_fields(self, **kwargs):
         """
@@ -382,44 +409,6 @@ class Search(Request):
             if isinstance(kwargs[name], string_types):
                 kwargs[name] = {'script': kwargs[name]}
         s._script_fields.update(kwargs)
-        return s
-
-    def source(self, **kwargs):
-        """
-        Selectively control how the _source field is returned.
-
-        :arg source: wildcard string, array of wildcards, or dictionary of includes and excludes
-
-        If ``source`` is None, the entire document will be returned for
-        each hit.  If source is a dictionary with keys of 'include' and/or
-        'exclude' the fields will be either included or excluded appropriately.
-
-        Calling this multiple times with the same named parameter will override the
-        previous values with the new ones.
-
-        Example::
-
-            s = Search()
-            s = s.source(include=['obj1.*'], exclude=["*.description"])
-
-            s = Search()
-            s = s.source(include=['obj1.*']).source(exclude=["*.description"])
-
-        """
-        s = self._clone()
-
-        if s._source is None:
-            s._source = {}
-
-        for key, value in kwargs.items():
-            if value is None:
-                try:
-                    del s._source[key]
-                except KeyError:
-                    pass
-            else:
-                s._source[key] = value
-
         return s
 
     def fields(self, fields=None):
@@ -504,7 +493,7 @@ class Search(Request):
 
     def highlight(self, *fields, **kwargs):
         """
-        Request highlighting of some fields. All keyword arguments passed in will be
+        Request highliting of some fields. All keyword arguments passed in will be
         used as parameters. Example::
 
             Search().highlight('title', 'body', fragment_size=50)
@@ -536,7 +525,7 @@ class Search(Request):
         All keyword arguments will be added to the suggestions body. For example::
 
             s = Search()
-            s = s.suggest('suggestion-1', 'Elasticsearch', term={'field': 'body'})
+            s = s.suggest('suggestion-1', 'Elasticserach', term={'field': 'body'})
         """
         s = self._clone()
         s._suggest[name] = {'text': text}
@@ -568,11 +557,11 @@ class Search(Request):
 
             d.update(self._extra)
 
-            if self._source:
-                d['_source'] = self._source
-
             if self._fields is not None:
                 d['fields'] = self._fields
+
+            if self._source:
+                d['_source'] = self._source
 
             if self._partial_fields:
                 d['partial_fields'] = self._partial_fields
@@ -701,7 +690,7 @@ class MultiSearch(Request):
 
         return out
 
-    def execute(self, ignore_cache=False, raise_on_error=True):
+    def execute(self, ignore_cache=False):
         if ignore_cache or not hasattr(self, '_response'):
             es = connections.get_connection(self._using)
 
@@ -714,14 +703,8 @@ class MultiSearch(Request):
 
             out = []
             for s, r in zip(self._searches, responses['responses']):
-                if r.get('error', False):
-                    print(r)
-                    if raise_on_error:
-                        raise TransportError('N/A', r['error']['type'], r['error'])
-                    r = None
-                else:
-                    r = Response(r, callbacks=s._doc_type_map)
-                    r.search = s
+                r = Response(r, callbacks=s._doc_type_map)
+                r.search = s
                 out.append(r)
 
             self._response = out
